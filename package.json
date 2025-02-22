@@ -1,7 +1,7 @@
 {
-  "name": "my-website-backend",
+  "name": "simplicity-backend",
   "version": "1.0.0",
-  "description": "Backend for my website",
+  "description": "Backend for Simplicity website",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
