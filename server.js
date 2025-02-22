@@ -92,16 +92,36 @@ app.post('/change-username', (req, res) => {
         return res.status(400).json({ error: 'User ID and new username are required.' });
     }
 
-    db.run(
-        'UPDATE users SET username = ? WHERE id = ?',
-        [newUsername, userId],
-        function (err) {
-            if (err) {
-                return res.status(400).json({ error: 'Username already exists.' });
-            }
-            res.json({ message: 'Username updated successfully.' });
+    // Check if the new username already exists
+    db.get('SELECT * FROM users WHERE username = ?', [newUsername], (err, existingUser) => {
+        if (err) {
+            return res.status(500).json({ error: 'An error occurred while checking the username.' });
         }
-    );
+        if (existingUser) {
+            return res.status(400).json({ error: 'Username already exists.' });
+        }
+
+        // Update the username
+        db.run(
+            'UPDATE users SET username = ? WHERE id = ?',
+            [newUsername, userId],
+            function (err) {
+                if (err) {
+                    return res.status(500).json({ error: 'An error occurred while updating the username.' });
+                }
+
+                // Fetch the updated user data
+                db.get('SELECT * FROM users WHERE id = ?', [userId], (err, user) => {
+                    if (err || !user) {
+                        return res.status(500).json({ error: 'An error occurred while fetching the updated user data.' });
+                    }
+
+                    // Return the updated user data (excluding the password)
+                    res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture });
+                });
+            }
+        );
+    });
 });
 
 // Change profile picture
@@ -112,6 +132,7 @@ app.post('/change-profile-picture', (req, res) => {
         return res.status(400).json({ error: 'User ID and new profile picture are required.' });
     }
 
+    // Update the profile picture
     db.run(
         'UPDATE users SET profilePicture = ? WHERE id = ?',
         [newProfilePicture, userId],
@@ -119,7 +140,16 @@ app.post('/change-profile-picture', (req, res) => {
             if (err) {
                 return res.status(500).json({ error: 'An error occurred while updating the profile picture.' });
             }
-            res.json({ message: 'Profile picture updated successfully.' });
+
+            // Fetch the updated user data
+            db.get('SELECT * FROM users WHERE id = ?', [userId], (err, user) => {
+                if (err || !user) {
+                    return res.status(500).json({ error: 'An error occurred while fetching the updated user data.' });
+                }
+
+                // Return the updated user data (excluding the password)
+                res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture });
+            });
         }
     );
 });
