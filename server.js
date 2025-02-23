@@ -105,6 +105,25 @@ app.get('/user/:username', (req, res) => {
     });
 });
 
+// Fetch user data by userId
+app.get('/user-by-id/:userId', (req, res) => {
+    const { userId } = req.params;
+
+    if (!userId) {
+        return res.status(400).json({ error: 'User ID is required.' });
+    }
+
+    // Find the user in the database
+    db.get('SELECT * FROM users WHERE id = ?', [userId], (err, user) => {
+        if (err || !user) {
+            return res.status(404).json({ error: 'User not found.' });
+        }
+
+        // Return user data (excluding the password)
+        res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture, profileBanner: user.profileBanner, bio: user.bio });
+    });
+});
+
 // Change username
 app.post('/change-username', (req, res) => {
     const { userId, newUsername } = req.body;
