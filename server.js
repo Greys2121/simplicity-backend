@@ -28,6 +28,14 @@ db.serialize(() => {
 app.use(cors());
 app.use(bodyParser.json());
 
+// Serve static files (your HTML, CSS, JS)
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Serve account.html for any /username route
+app.get('/:username', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'account.html'));
+});
+
 // Register a new user
 app.post('/register', async (req, res) => {
     const { username, password, profilePicture } = req.body;
@@ -86,7 +94,7 @@ app.post('/login', async (req, res) => {
 });
 
 // Fetch user profile by username
-app.get('/user/:username', (req, res) => {
+app.get('/api/user/:username', (req, res) => {
     const { username } = req.params;
 
     db.get('SELECT id, username, profilePicture, banner FROM users WHERE username = ?', [username], (err, user) => {
