@@ -18,7 +18,8 @@ db.serialize(() => {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
-            profilePicture TEXT
+            profilePicture TEXT,
+            banner TEXT
         )
     `);
 });
@@ -41,13 +42,13 @@ app.post('/register', async (req, res) => {
 
         // Insert the new user into the database
         db.run(
-            'INSERT INTO users (username, password, profilePicture) VALUES (?, ?, ?)',
-            [username, hashedPassword, profilePicture || 'https://via.placeholder.com/150'],
+            'INSERT INTO users (username, password, profilePicture, banner) VALUES (?, ?, ?, ?)',
+            [username, hashedPassword, profilePicture || 'https://via.placeholder.com/150', 'https://via.placeholder.com/1200x200'],
             function (err) {
                 if (err) {
                     return res.status(400).json({ error: 'Username already exists.' });
                 }
-                res.status(201).json({ id: this.lastID, username, profilePicture });
+                res.status(201).json({ id: this.lastID, username, profilePicture, banner: 'https://via.placeholder.com/1200x200' });
             }
         );
     } catch (err) {
@@ -77,11 +78,23 @@ app.post('/login', async (req, res) => {
             }
 
             // Return user data (excluding the password)
-            res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture });
+            res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture, banner: user.banner });
         });
     } catch (err) {
         res.status(500).json({ error: 'An error occurred during login.' });
     }
+});
+
+// Fetch user profile by username
+app.get('/user/:username', (req, res) => {
+    const { username } = req.params;
+
+    db.get('SELECT id, username, profilePicture, banner FROM users WHERE username = ?', [username], (err, user) => {
+        if (err || !user) {
+            return res.status(404).json({ error: 'User not found.' });
+        }
+        res.json(user);
+    });
 });
 
 // Change username
@@ -117,7 +130,7 @@ app.post('/change-username', (req, res) => {
                     }
 
                     // Return the updated user data (excluding the password)
-                    res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture });
+                    res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture, banner: user.banner });
                 });
             }
         );
@@ -148,7 +161,37 @@ app.post('/change-profile-picture', (req, res) => {
                 }
 
                 // Return the updated user data (excluding the password)
-                res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture });
+                res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture, banner: user.banner });
+            });
+        }
+    );
+});
+
+// Change banner
+app.post('/change-banner', (req, res) => {
+    const { userId, newBanner } = req.body;
+
+    if (!userId || !newBanner) {
+        return res.status(400).json({ error: 'User ID and new banner are required.' });
+    }
+
+    // Update the banner
+    db.run(
+        'UPDATE users SET banner = ? WHERE id = ?',
+        [newBanner, userId],
+        function (err) {
+            if (err) {
+                return res.status(500).json({ error: 'An error occurred while updating the banner.' });
+            }
+
+            // Fetch the updated user data
+            db.get('SELECT * FROM users WHERE id = ?', [userId], (err, user) => {
+                if (err || !user) {
+                    return res.status(500).json({ error: 'An error occurred while fetching the updated user data.' });
+                }
+
+                // Return the updated user data (excluding the password)
+                res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture, banner: user.banner });
             });
         }
     );
