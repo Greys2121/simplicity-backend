@@ -18,9 +18,7 @@ db.serialize(() => {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
-            profilePicture TEXT,
-            profileBanner TEXT,
-            bio TEXT
+            profilePicture TEXT
         )
     `);
 });
@@ -43,13 +41,13 @@ app.post('/register', async (req, res) => {
 
         // Insert the new user into the database
         db.run(
-            'INSERT INTO users (username, password, profilePicture, profileBanner, bio) VALUES (?, ?, ?, ?, ?)',
-            [username, hashedPassword, profilePicture || 'https://via.placeholder.com/150', 'https://via.placeholder.com/1200x300', ''],
+            'INSERT INTO users (username, password, profilePicture) VALUES (?, ?, ?)',
+            [username, hashedPassword, profilePicture || 'https://via.placeholder.com/150'],
             function (err) {
                 if (err) {
                     return res.status(400).json({ error: 'Username already exists.' });
                 }
-                res.status(201).json({ id: this.lastID, username, profilePicture, profileBanner: 'https://via.placeholder.com/1200x300', bio: '' });
+                res.status(201).json({ id: this.lastID, username, profilePicture });
             }
         );
     } catch (err) {
@@ -79,49 +77,11 @@ app.post('/login', async (req, res) => {
             }
 
             // Return user data (excluding the password)
-            res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture, profileBanner: user.profileBanner, bio: user.bio });
+            res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture });
         });
     } catch (err) {
         res.status(500).json({ error: 'An error occurred during login.' });
     }
-});
-
-// Fetch user data by username
-app.get('/user/:username', (req, res) => {
-    const { username } = req.params;
-
-    if (!username) {
-        return res.status(400).json({ error: 'Username is required.' });
-    }
-
-    // Find the user in the database
-    db.get('SELECT * FROM users WHERE username = ?', [username], (err, user) => {
-        if (err || !user) {
-            return res.status(404).json({ error: 'User not found.' });
-        }
-
-        // Return user data (excluding the password)
-        res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture, profileBanner: user.profileBanner, bio: user.bio });
-    });
-});
-
-// Fetch user data by userId
-app.get('/user-by-id/:userId', (req, res) => {
-    const { userId } = req.params;
-
-    if (!userId) {
-        return res.status(400).json({ error: 'User ID is required.' });
-    }
-
-    // Find the user in the database
-    db.get('SELECT * FROM users WHERE id = ?', [userId], (err, user) => {
-        if (err || !user) {
-            return res.status(404).json({ error: 'User not found.' });
-        }
-
-        // Return user data (excluding the password)
-        res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture, profileBanner: user.profileBanner, bio: user.bio });
-    });
 });
 
 // Change username
@@ -157,7 +117,7 @@ app.post('/change-username', (req, res) => {
                     }
 
                     // Return the updated user data (excluding the password)
-                    res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture, profileBanner: user.profileBanner, bio: user.bio });
+                    res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture });
                 });
             }
         );
@@ -188,67 +148,7 @@ app.post('/change-profile-picture', (req, res) => {
                 }
 
                 // Return the updated user data (excluding the password)
-                res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture, profileBanner: user.profileBanner, bio: user.bio });
-            });
-        }
-    );
-});
-
-// Change banner
-app.post('/change-banner', (req, res) => {
-    const { userId, newBanner } = req.body;
-
-    if (!userId || !newBanner) {
-        return res.status(400).json({ error: 'User ID and new banner are required.' });
-    }
-
-    // Update the banner
-    db.run(
-        'UPDATE users SET profileBanner = ? WHERE id = ?',
-        [newBanner, userId],
-        function (err) {
-            if (err) {
-                return res.status(500).json({ error: 'An error occurred while updating the banner.' });
-            }
-
-            // Fetch the updated user data
-            db.get('SELECT * FROM users WHERE id = ?', [userId], (err, user) => {
-                if (err || !user) {
-                    return res.status(500).json({ error: 'An error occurred while fetching the updated user data.' });
-                }
-
-                // Return the updated user data (excluding the password)
-                res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture, profileBanner: user.profileBanner, bio: user.bio });
-            });
-        }
-    );
-});
-
-// Change bio
-app.post('/change-bio', (req, res) => {
-    const { userId, newBio } = req.body;
-
-    if (!userId || !newBio) {
-        return res.status(400).json({ error: 'User ID and new bio are required.' });
-    }
-
-    // Update the bio
-    db.run(
-        'UPDATE users SET bio = ? WHERE id = ?',
-        [newBio, userId],
-        function (err) {
-            if (err) {
-                return res.status(500).json({ error: 'An error occurred while updating the bio.' });
-            }
-
-            // Fetch the updated user data
-            db.get('SELECT * FROM users WHERE id = ?', [userId], (err, user) => {
-                if (err || !user) {
-                    return res.status(500).json({ error: 'An error occurred while fetching the updated user data.' });
-                }
-
-                // Return the updated user data (excluding the password)
-                res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture, profileBanner: user.profileBanner, bio: user.bio });
+                res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture });
             });
         }
     );
