@@ -2,7 +2,8 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
-const { Client } = require('pg');
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -11,29 +12,20 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(bodyParser.json());
 
-// PostgreSQL client setup
-const client = new Client({
-  connectionString: process.env.DATABASE_URL, // Use the connection string from Render
-  ssl: { rejectUnauthorized: false }, // Required for Render's PostgreSQL
-});
-
-// Connect to the database
-client.connect()
-  .then(() => console.log('Connected to PostgreSQL database'))
-  .catch(err => console.error('Connection error', err.stack));
+// Connect to SQLite database
+const db = new sqlite3.Database(path.join(__dirname, 'database.sqlite'));
 
 // Create users table if it doesn't exist
-const createTableQuery = `
-  CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
-    username TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    profilePicture TEXT
-  )
-`;
-client.query(createTableQuery)
-  .then(() => console.log('Users table created or already exists'))
-  .catch(err => console.error('Error creating table', err));
+db.serialize(() => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      profilePicture TEXT
+    )
+  `);
+});
 
 // Register a new user
 app.post('/register', async (req, res) => {
@@ -48,18 +40,18 @@ app.post('/register', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Insert the new user into the database
-    const result = await client.query(
-      'INSERT INTO users (username, password, profilePicture) VALUES ($1, $2, $3) RETURNING *',
-      [username, hashedPassword, profilePicture || 'https://via.placeholder.com/150']
+    db.run(
+      'INSERT INTO users (username, password, profilePicture) VALUES (?, ?, ?)',
+      [username, hashedPassword, profilePicture || 'https://via.placeholder.com/150'],
+      function (err) {
+        if (err) {
+          return res.status(400).json({ error: 'Username already exists.' });
+        }
+        res.status(201).json({ id: this.lastID, username, profilePicture });
+      }
     );
-
-    res.status(201).json(result.rows[0]);
   } catch (err) {
-    if (err.code === '23505') { // Unique constraint violation (username already exists)
-      res.status(400).json({ error: 'Username already exists.' });
-    } else {
-      res.status(500).json({ error: 'An error occurred during registration.' });
-    }
+    res.status(500).json({ error: 'An error occurred during registration.' });
   }
 });
 
@@ -73,72 +65,93 @@ app.post('/login', async (req, res) => {
 
   try {
     // Find the user in the database
-    const result = await client.query('SELECT * FROM users WHERE username = $1', [username]);
-    const user = result.rows[0];
+    db.get('SELECT * FROM users WHERE username = ?', [username], async (err, user) => {
+      if (err || !user) {
+        return res.status(400).json({ error: 'Invalid username or password.' });
+      }
 
-    if (!user) {
-      return res.status(400).json({ error: 'Invalid username or password.' });
-    }
+      // Compare the provided password with the hashed password
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+      if (!isPasswordValid) {
+        return res.status(400).json({ error: 'Invalid username or password.' });
+      }
 
-    // Compare the provided password with the hashed password
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      return res.status(400).json({ error: 'Invalid username or password.' });
-    }
-
-    // Return user data (excluding the password)
-    res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture });
+      // Return user data (excluding the password)
+      res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture });
+    });
   } catch (err) {
     res.status(500).json({ error: 'An error occurred during login.' });
   }
 });
 
 // Change username
-app.post('/change-username', async (req, res) => {
+app.post('/change-username', (req, res) => {
   const { userId, newUsername } = req.body;
 
   if (!userId || !newUsername) {
     return res.status(400).json({ error: 'User ID and new username are required.' });
   }
 
-  try {
-    // Check if the new username already exists
-    const checkResult = await client.query('SELECT * FROM users WHERE username = $1', [newUsername]);
-    if (checkResult.rows.length > 0) {
+  // Check if the new username already exists
+  db.get('SELECT * FROM users WHERE username = ?', [newUsername], (err, existingUser) => {
+    if (err) {
+      return res.status(500).json({ error: 'An error occurred while checking the username.' });
+    }
+    if (existingUser) {
       return res.status(400).json({ error: 'Username already exists.' });
     }
 
     // Update the username
-    const updateResult = await client.query(
-      'UPDATE users SET username = $1 WHERE id = $2 RETURNING *',
-      [newUsername, userId]
-    );
+    db.run(
+      'UPDATE users SET username = ? WHERE id = ?',
+      [newUsername, userId],
+      function (err) {
+        if (err) {
+          return res.status(500).json({ error: 'An error occurred while updating the username.' });
+        }
 
-    res.json(updateResult.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: 'An error occurred while updating the username.' });
-  }
+        // Fetch the updated user data
+        db.get('SELECT * FROM users WHERE id = ?', [userId], (err, user) => {
+          if (err || !user) {
+            return res.status(500).json({ error: 'An error occurred while fetching the updated user data.' });
+          }
+
+          // Return the updated user data (excluding the password)
+          res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture });
+        });
+      }
+    );
+  });
 });
 
 // Change profile picture
-app.post('/change-profile-picture', async (req, res) => {
+app.post('/change-profile-picture', (req, res) => {
   const { userId, newProfilePicture } = req.body;
 
   if (!userId || !newProfilePicture) {
     return res.status(400).json({ error: 'User ID and new profile picture are required.' });
   }
 
-  try {
-    // Update the profile picture
-    const result = await client.query(
-      'UPDATE users SET profilePicture = $1 WHERE id = $2 RETURNING *',
-      [newProfilePicture, userId]
-    );
+  // Update the profile picture
+  db.run(
+    'UPDATE users SET profilePicture = ? WHERE id = ?',
+    [newProfilePicture, userId],
+    function (err) {
+      if (err) {
+        return res.status(500).json({ error: 'An error occurred while updating the profile picture.' });
+      }
 
-    res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: 'An error occurred while updating the profile picture.' });
-  }
+      // Fetch the updated user data
+      db.get('SELECT * FROM users WHERE id = ?', [userId], (err, user) => {
+        if (err || !user) {
+          return res.status(500).json({ error: 'An error occurred while fetching the updated user data.' });
+        }
+
+        // Return the updated user data (excluding the password)
+        res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture });
+      });
+    }
+  );
 });
 
 // Start the server
