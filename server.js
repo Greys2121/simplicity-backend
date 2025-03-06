@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fileUpload = require('express-fileupload');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -13,7 +14,13 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(bodyParser.json());
 app.use(fileUpload()); // Enable file uploads
-app.use('/uploads', express.static(path.join(__dirname, 'uploads'))); // Serve uploaded files
+
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir);
+}
+app.use('/uploads', express.static(uploadsDir)); // Serve uploaded files
 
 // Connect to SQLite database
 const db = new sqlite3.Database(path.join(__dirname, 'database.sqlite'));
@@ -136,6 +143,7 @@ app.post('/upload', (req, res) => {
 
   media.mv(filePath, (err) => {
     if (err) {
+      console.error('Error moving file:', err);
       return res.status(500).json({ error: 'Failed to upload file.' });
     }
 
@@ -166,81 +174,20 @@ app.post('/messages', (req, res) => {
     [username, profilePicture, text, mediaUrl],
     function (err) {
       if (err) {
+        console.error('Error inserting message:', err);
         return res.status(500).json({ error: 'An error occurred while sending the message.' });
       }
 
       // Fetch the newly inserted message
       db.get('SELECT * FROM messages WHERE id = ?', [this.lastID], (err, message) => {
         if (err || !message) {
+          console.error('Error fetching message:', err);
           return res.status(500).json({ error: 'An error occurred while fetching the message.' });
         }
 
-        // Schedule deletion of this message after 1 hour
-        setTimeout(() => {
-          db.run('DELETE FROM messages WHERE id = ?', [message.id], (err) => {
-            if (err) {
-              console.error('Error deleting message:', err);
-            } else {
-              console.log(`Message ${message.id} deleted after 1 hour.`);
-            }
-          });
-        }, 60 * 60 * 1000); // 1 hour in milliseconds
-
+        console.log('Message saved:', message); // Log the saved message
         res.status(201).json(message);
       });
-    }
-  );
-});
-
-// Edit a message
-app.put('/messages/:id', (req, res) => {
-  const { id } = req.params;
-  const { text } = req.body;
-
-  if (!text) {
-    return res.status(400).json({ error: 'Text is required.' });
-  }
-
-  db.run(
-    'UPDATE messages SET text = ? WHERE id = ?',
-    [text, id],
-    function (err) {
-      if (err) {
-        return res.status(500).json({ error: 'An error occurred while editing the message.' });
-      }
-
-      if (this.changes === 0) {
-        return res.status(404).json({ error: 'Message not found.' });
-      }
-
-      // Fetch the updated message
-      db.get('SELECT * FROM messages WHERE id = ?', [id], (err, message) => {
-        if (err || !message) {
-          return res.status(500).json({ error: 'An error occurred while fetching the updated message.' });
-        }
-        res.json(message);
-      });
-    }
-  );
-});
-
-// Delete a message
-app.delete('/messages/:id', (req, res) => {
-  const { id } = req.params;
-
-  db.run(
-    'DELETE FROM messages WHERE id = ?',
-    [id],
-    function (err) {
-      if (err) {
-        return res.status(500).json({ error: 'An error occurred while deleting the message.' });
-      }
-
-      if (this.changes === 0) {
-        return res.status(404).json({ error: 'Message not found.' });
-      }
-
-      res.json({ message: 'Message deleted successfully.' });
     }
   );
 });
