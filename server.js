@@ -5,7 +5,6 @@ const bcrypt = require('bcryptjs');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fileUpload = require('express-fileupload');
-const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -13,17 +12,8 @@ const PORT = process.env.PORT || 5000;
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
-app.use(fileUpload({
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
-  abortOnLimit: true,
-}));
+app.use(fileUpload()); // Enable file uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads'))); // Serve uploaded files
-
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir);
-}
 
 // Connect to SQLite database
 const db = new sqlite3.Database(path.join(__dirname, 'database.sqlite'));
@@ -60,19 +50,37 @@ app.post('/register', async (req, res) => {
     return res.status(400).json({ error: 'Username and password are required.' });
   }
 
-  try {
-    // Hash the password
-    const hashedPassword = await bcrypt.hash(password, 10);
+  // Convert username to lowercase for case-insensitive comparison
+  const lowercaseUsername = username.toLowerCase();
 
-    // Insert the new user into the database
-    db.run(
-      'INSERT INTO users (username, password, profilePicture) VALUES (?, ?, ?)',
-      [username, hashedPassword, profilePicture || 'https://via.placeholder.com/150'],
-      function (err) {
+  try {
+    // Check if the username already exists (case-insensitive)
+    db.get(
+      'SELECT * FROM users WHERE LOWER(username) = ?',
+      [lowercaseUsername],
+      async (err, user) => {
         if (err) {
+          return res.status(500).json({ error: 'An error occurred during registration.' });
+        }
+
+        if (user) {
           return res.status(400).json({ error: 'Username already exists.' });
         }
-        res.status(201).json({ id: this.lastID, username, profilePicture });
+
+        // Hash the password
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Insert the new user into the database
+        db.run(
+          'INSERT INTO users (username, password, profilePicture) VALUES (?, ?, ?)',
+          [lowercaseUsername, hashedPassword, profilePicture || 'https://via.placeholder.com/150'],
+          function (err) {
+            if (err) {
+              return res.status(500).json({ error: 'An error occurred during registration.' });
+            }
+            res.status(201).json({ id: this.lastID, username: lowercaseUsername, profilePicture });
+          }
+        );
       }
     );
   } catch (err) {
@@ -88,22 +96,29 @@ app.post('/login', async (req, res) => {
     return res.status(400).json({ error: 'Username and password are required.' });
   }
 
+  // Convert username to lowercase for case-insensitive comparison
+  const lowercaseUsername = username.toLowerCase();
+
   try {
-    // Find the user in the database
-    db.get('SELECT * FROM users WHERE username = ?', [username], async (err, user) => {
-      if (err || !user) {
-        return res.status(400).json({ error: 'Invalid username or password.' });
-      }
+    // Find the user in the database (case-insensitive)
+    db.get(
+      'SELECT * FROM users WHERE LOWER(username) = ?',
+      [lowercaseUsername],
+      async (err, user) => {
+        if (err || !user) {
+          return res.status(400).json({ error: 'Invalid username or password.' });
+        }
 
-      // Compare the provided password with the hashed password
-      const isPasswordValid = await bcrypt.compare(password, user.password);
-      if (!isPasswordValid) {
-        return res.status(400).json({ error: 'Invalid username or password.' });
-      }
+        // Compare the provided password with the hashed password
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+        if (!isPasswordValid) {
+          return res.status(400).json({ error: 'Invalid username or password.' });
+        }
 
-      // Return user data (excluding the password)
-      res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture });
-    });
+        // Return user data (excluding the password)
+        res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture });
+      }
+    );
   } catch (err) {
     res.status(500).json({ error: 'An error occurred during login.' });
   }
@@ -161,6 +176,53 @@ app.post('/messages', (req, res) => {
         }
         res.status(201).json(message);
       });
+    }
+  );
+});
+
+// Edit a message
+app.put('/messages/:id', (req, res) => {
+  const { id } = req.params;
+  const { text } = req.body;
+
+  if (!text) {
+    return res.status(400).json({ error: 'Text is required.' });
+  }
+
+  db.run(
+    'UPDATE messages SET text = ? WHERE id = ?',
+    [text, id],
+    function (err) {
+      if (err) {
+        return res.status(500).json({ error: 'An error occurred while editing the message.' });
+      }
+
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Message not found.' });
+      }
+
+      res.json({ message: 'Message updated successfully.' });
+    }
+  );
+});
+
+// Delete a message
+app.delete('/messages/:id', (req, res) => {
+  const { id } = req.params;
+
+  db.run(
+    'DELETE FROM messages WHERE id = ?',
+    [id],
+    function (err) {
+      if (err) {
+        return res.status(500).json({ error: 'An error occurred while deleting the message.' });
+      }
+
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Message not found.' });
+      }
+
+      res.json({ message: 'Message deleted successfully.' });
     }
   );
 });
