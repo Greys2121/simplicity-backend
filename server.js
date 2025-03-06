@@ -25,6 +25,17 @@ db.serialize(() => {
       profilePicture TEXT
     )
   `);
+
+  // Create messages table if it doesn't exist
+  db.run(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL,
+      profilePicture TEXT,
+      text TEXT NOT NULL,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
 });
 
 // Register a new user
@@ -149,6 +160,43 @@ app.post('/change-profile-picture', (req, res) => {
 
         // Return the updated user data (excluding the password)
         res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture });
+      });
+    }
+  );
+});
+
+// Fetch all messages
+app.get('/messages', (req, res) => {
+  db.all('SELECT * FROM messages ORDER BY timestamp ASC', (err, messages) => {
+    if (err) {
+      return res.status(500).json({ error: 'An error occurred while fetching messages.' });
+    }
+    res.json(messages);
+  });
+});
+
+// Send a new message
+app.post('/messages', (req, res) => {
+  const { username, profilePicture, text } = req.body;
+
+  if (!username || !text) {
+    return res.status(400).json({ error: 'Username and text are required.' });
+  }
+
+  db.run(
+    'INSERT INTO messages (username, profilePicture, text) VALUES (?, ?, ?)',
+    [username, profilePicture, text],
+    function (err) {
+      if (err) {
+        return res.status(500).json({ error: 'An error occurred while sending the message.' });
+      }
+
+      // Fetch the newly inserted message
+      db.get('SELECT * FROM messages WHERE id = ?', [this.lastID], (err, message) => {
+        if (err || !message) {
+          return res.status(500).json({ error: 'An error occurred while fetching the message.' });
+        }
+        res.status(201).json(message);
       });
     }
   );
