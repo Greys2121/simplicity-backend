@@ -27,6 +27,25 @@ db.serialize(() => {
   `);
 });
 
+// Function to generate a default profile picture
+function generateDefaultProfilePicture(username) {
+  const firstLetter = username.charAt(0).toUpperCase();
+  const randomColor = () => Math.floor(Math.random() * 156 + 100); // Range: 100-255 for non-vibrant colors
+  const bgColor = `rgb(${randomColor()}, ${randomColor()}, ${randomColor()})`;
+  const textColor = '#ffffff'; // White text for contrast
+
+  // Create an SVG for the profile picture
+  const svg = `
+    <svg width="150" height="150" xmlns="http://www.w3.org/2000/svg">
+      <rect width="150" height="150" fill="${bgColor}" />
+      <text x="50%" y="50%" font-size="60" fill="${textColor}" text-anchor="middle" dy=".3em">${firstLetter}</text>
+    </svg>
+  `;
+
+  // Convert SVG to a data URL
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+}
+
 // Register a new user
 app.post('/register', async (req, res) => {
   const { username, password, profilePicture } = req.body;
@@ -39,15 +58,18 @@ app.post('/register', async (req, res) => {
     // Hash the password
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // Generate a default profile picture if none is provided
+    const finalProfilePicture = profilePicture || generateDefaultProfilePicture(username);
+
     // Insert the new user into the database
     db.run(
       'INSERT INTO users (username, password, profilePicture) VALUES (?, ?, ?)',
-      [username, hashedPassword, profilePicture || 'https://via.placeholder.com/150'],
+      [username, hashedPassword, finalProfilePicture],
       function (err) {
         if (err) {
           return res.status(400).json({ error: 'Username already exists.' });
         }
-        res.status(201).json({ id: this.lastID, username, profilePicture });
+        res.status(201).json({ id: this.lastID, username, profilePicture: finalProfilePicture });
       }
     );
   } catch (err) {
