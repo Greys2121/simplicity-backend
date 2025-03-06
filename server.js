@@ -174,6 +174,18 @@ app.post('/messages', (req, res) => {
         if (err || !message) {
           return res.status(500).json({ error: 'An error occurred while fetching the message.' });
         }
+
+        // Schedule deletion of this message after 1 hour
+        setTimeout(() => {
+          db.run('DELETE FROM messages WHERE id = ?', [message.id], (err) => {
+            if (err) {
+              console.error('Error deleting message:', err);
+            } else {
+              console.log(`Message ${message.id} deleted after 1 hour.`);
+            }
+          });
+        }, 60 * 60 * 1000); // 1 hour in milliseconds
+
         res.status(201).json(message);
       });
     }
@@ -191,4 +203,49 @@ app.put('/messages/:id', (req, res) => {
 
   db.run(
     'UPDATE messages SET text = ? WHERE id = ?',
-    [text, id
+    [text, id],
+    function (err) {
+      if (err) {
+        return res.status(500).json({ error: 'An error occurred while editing the message.' });
+      }
+
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Message not found.' });
+      }
+
+      // Fetch the updated message
+      db.get('SELECT * FROM messages WHERE id = ?', [id], (err, message) => {
+        if (err || !message) {
+          return res.status(500).json({ error: 'An error occurred while fetching the updated message.' });
+        }
+        res.json(message);
+      });
+    }
+  );
+});
+
+// Delete a message
+app.delete('/messages/:id', (req, res) => {
+  const { id } = req.params;
+
+  db.run(
+    'DELETE FROM messages WHERE id = ?',
+    [id],
+    function (err) {
+      if (err) {
+        return res.status(500).json({ error: 'An error occurred while deleting the message.' });
+      }
+
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Message not found.' });
+      }
+
+      res.json({ message: 'Message deleted successfully.' });
+    }
+  );
+});
+
+// Start the server
+app.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
+});
