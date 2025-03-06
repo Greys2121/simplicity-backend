@@ -202,7 +202,27 @@ app.post('/messages', (req, res) => {
   );
 });
 
+// Function to delete messages older than 5 hours
+function deleteOldMessages() {
+  const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+  db.run(
+    'DELETE FROM messages WHERE timestamp < ?',
+    [fiveHoursAgo],
+    function (err) {
+      if (err) {
+        console.error('Error deleting old messages:', err);
+      } else {
+        console.log(`Deleted ${this.changes} old messages.`);
+      }
+    }
+  );
+}
+
+// Schedule the cleanup task to run every hour
+setInterval(deleteOldMessages, 60 * 60 * 1000);
+
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
+  deleteOldMessages(); // Run cleanup task on server start
 });
