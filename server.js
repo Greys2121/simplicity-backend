@@ -111,25 +111,19 @@ app.post('/login', async (req, res) => {
 
 // Upload media (images/videos)
 app.post('/upload', (req, res) => {
-  console.log('Request files:', req.files);
   if (!req.files || !req.files.media) {
-    console.log('No file uploaded');
     return res.status(400).json({ error: 'No file uploaded.' });
   }
 
   const media = req.files.media;
-  console.log('Uploading file:', media.name);
-
   const fileName = `${Date.now()}_${media.name}`;
   const filePath = path.join(__dirname, 'uploads', fileName);
 
   media.mv(filePath, (err) => {
     if (err) {
-      console.error('Error moving file:', err);
       return res.status(500).json({ error: 'Failed to upload file.' });
     }
 
-    console.log('File uploaded successfully:', fileName);
     res.json({ mediaUrl: `/uploads/${fileName}` });
   });
 });
@@ -171,12 +165,12 @@ app.post('/messages', (req, res) => {
   );
 });
 
-// Function to delete messages older than 5 hours
+// Function to delete messages older than 1 hour
 function deleteOldMessages() {
-  const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   db.run(
     'DELETE FROM messages WHERE timestamp < ?',
-    [fiveHoursAgo],
+    [oneHourAgo],
     function (err) {
       if (err) {
         console.error('Error deleting old messages:', err);
