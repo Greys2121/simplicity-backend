@@ -5,7 +5,6 @@ const bcrypt = require('bcryptjs');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fileUpload = require('express-fileupload');
-const fetch = require('node-fetch');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -117,23 +116,6 @@ app.post('/upload', (req, res) => {
 
     res.json({ mediaUrl: `/uploads/${fileName}` });
   });
-});
-
-// Fetch link preview
-app.post('/link-preview', async (req, res) => {
-  const { url } = req.body;
-
-  if (!url) {
-    return res.status(400).json({ error: 'URL is required.' });
-  }
-
-  try {
-    const response = await fetch(`https://api.linkpreview.net/?key=YOUR_API_KEY&q=${encodeURIComponent(url)}`);
-    const data = await response.json();
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch link preview.' });
-  }
 });
 
 // Fetch all messages
