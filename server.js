@@ -102,18 +102,23 @@ app.post('/login', async (req, res) => {
 // Upload media (images/videos)
 app.post('/upload', (req, res) => {
   if (!req.files || !req.files.media) {
+    console.log('No file uploaded');
     return res.status(400).json({ error: 'No file uploaded.' });
   }
 
   const media = req.files.media;
+  console.log('Uploading file:', media.name);
+
   const fileName = `${Date.now()}_${media.name}`;
   const filePath = path.join(__dirname, 'uploads', fileName);
 
   media.mv(filePath, (err) => {
     if (err) {
+      console.error('Error moving file:', err);
       return res.status(500).json({ error: 'Failed to upload file.' });
     }
 
+    console.log('File uploaded successfully:', fileName);
     res.json({ mediaUrl: `/uploads/${fileName}` });
   });
 });
