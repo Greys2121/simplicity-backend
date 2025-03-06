@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fileUpload = require('express-fileupload');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -12,8 +13,17 @@ const PORT = process.env.PORT || 5000;
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
-app.use(fileUpload()); // Enable file uploads
+app.use(fileUpload({
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
+  abortOnLimit: true,
+}));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads'))); // Serve uploaded files
+
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir);
+}
 
 // Connect to SQLite database
 const db = new sqlite3.Database(path.join(__dirname, 'database.sqlite'));
@@ -101,6 +111,7 @@ app.post('/login', async (req, res) => {
 
 // Upload media (images/videos)
 app.post('/upload', (req, res) => {
+  console.log('Request files:', req.files);
   if (!req.files || !req.files.media) {
     console.log('No file uploaded');
     return res.status(400).json({ error: 'No file uploaded.' });
