@@ -4,6 +4,8 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const fileUpload = require('express-fileupload');
+const fetch = require('node-fetch');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -11,6 +13,8 @@ const PORT = process.env.PORT || 5000;
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
+app.use(fileUpload()); // Enable file uploads
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'))); // Serve uploaded files
 
 // Connect to SQLite database
 const db = new sqlite3.Database(path.join(__dirname, 'database.sqlite'));
@@ -32,7 +36,8 @@ db.serialize(() => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT NOT NULL,
       profilePicture TEXT,
-      text TEXT NOT NULL,
+      text TEXT,
+      mediaUrl TEXT,
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
@@ -95,74 +100,40 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// Change username
-app.post('/change-username', (req, res) => {
-  const { userId, newUsername } = req.body;
-
-  if (!userId || !newUsername) {
-    return res.status(400).json({ error: 'User ID and new username are required.' });
+// Upload media (images/videos)
+app.post('/upload', (req, res) => {
+  if (!req.files || !req.files.media) {
+    return res.status(400).json({ error: 'No file uploaded.' });
   }
 
-  // Check if the new username already exists
-  db.get('SELECT * FROM users WHERE username = ?', [newUsername], (err, existingUser) => {
+  const media = req.files.media;
+  const fileName = `${Date.now()}_${media.name}`;
+  const filePath = path.join(__dirname, 'uploads', fileName);
+
+  media.mv(filePath, (err) => {
     if (err) {
-      return res.status(500).json({ error: 'An error occurred while checking the username.' });
-    }
-    if (existingUser) {
-      return res.status(400).json({ error: 'Username already exists.' });
+      return res.status(500).json({ error: 'Failed to upload file.' });
     }
 
-    // Update the username
-    db.run(
-      'UPDATE users SET username = ? WHERE id = ?',
-      [newUsername, userId],
-      function (err) {
-        if (err) {
-          return res.status(500).json({ error: 'An error occurred while updating the username.' });
-        }
-
-        // Fetch the updated user data
-        db.get('SELECT * FROM users WHERE id = ?', [userId], (err, user) => {
-          if (err || !user) {
-            return res.status(500).json({ error: 'An error occurred while fetching the updated user data.' });
-          }
-
-          // Return the updated user data (excluding the password)
-          res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture });
-        });
-      }
-    );
+    res.json({ mediaUrl: `/uploads/${fileName}` });
   });
 });
 
-// Change profile picture
-app.post('/change-profile-picture', (req, res) => {
-  const { userId, newProfilePicture } = req.body;
+// Fetch link preview
+app.post('/link-preview', async (req, res) => {
+  const { url } = req.body;
 
-  if (!userId || !newProfilePicture) {
-    return res.status(400).json({ error: 'User ID and new profile picture are required.' });
+  if (!url) {
+    return res.status(400).json({ error: 'URL is required.' });
   }
 
-  // Update the profile picture
-  db.run(
-    'UPDATE users SET profilePicture = ? WHERE id = ?',
-    [newProfilePicture, userId],
-    function (err) {
-      if (err) {
-        return res.status(500).json({ error: 'An error occurred while updating the profile picture.' });
-      }
-
-      // Fetch the updated user data
-      db.get('SELECT * FROM users WHERE id = ?', [userId], (err, user) => {
-        if (err || !user) {
-          return res.status(500).json({ error: 'An error occurred while fetching the updated user data.' });
-        }
-
-        // Return the updated user data (excluding the password)
-        res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture });
-      });
-    }
-  );
+  try {
+    const response = await fetch(`https://api.linkpreview.net/?key=YOUR_API_KEY&q=${encodeURIComponent(url)}`);
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch link preview.' });
+  }
 });
 
 // Fetch all messages
@@ -177,15 +148,15 @@ app.get('/messages', (req, res) => {
 
 // Send a new message
 app.post('/messages', (req, res) => {
-  const { username, profilePicture, text } = req.body;
+  const { username, profilePicture, text, mediaUrl } = req.body;
 
-  if (!username || !text) {
-    return res.status(400).json({ error: 'Username and text are required.' });
+  if (!username || (!text && !mediaUrl)) {
+    return res.status(400).json({ error: 'Username and text or media are required.' });
   }
 
   db.run(
-    'INSERT INTO messages (username, profilePicture, text) VALUES (?, ?, ?)',
-    [username, profilePicture, text],
+    'INSERT INTO messages (username, profilePicture, text, mediaUrl) VALUES (?, ?, ?, ?)',
+    [username, profilePicture, text, mediaUrl],
     function (err) {
       if (err) {
         return res.status(500).json({ error: 'An error occurred while sending the message.' });
