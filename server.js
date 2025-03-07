@@ -154,6 +154,45 @@ app.post('/login', async (req, res) => {
   }
 });
 
+// Update profile picture
+app.put('/users/:id/profilePicture', (req, res) => {
+  const { id } = req.params;
+  const { profilePicture } = req.body;
+
+  if (!profilePicture) {
+    return res.status(400).json({ error: 'Profile picture URL is required.' });
+  }
+
+  db.run(
+    'UPDATE users SET profilePicture = ? WHERE id = ?',
+    [profilePicture, id],
+    function (err) {
+      if (err) {
+        console.error('Error updating profile picture:', err);
+        return res.status(500).json({ error: 'An error occurred while updating the profile picture.' });
+      }
+
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'User not found.' });
+      }
+
+      // Update profile picture in all messages sent by this user
+      db.run(
+        'UPDATE messages SET profilePicture = ? WHERE username = (SELECT username FROM users WHERE id = ?)',
+        [profilePicture, id],
+        function (err) {
+          if (err) {
+            console.error('Error updating profile picture in messages:', err);
+            return res.status(500).json({ error: 'An error occurred while updating the profile picture in messages.' });
+          }
+
+          res.status(200).json({ message: 'Profile picture updated successfully.' });
+        }
+      );
+    }
+  );
+});
+
 // Upload media
 app.post('/upload', (req, res) => {
   if (!req.files || !req.files.media) {
