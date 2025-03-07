@@ -1,5 +1,6 @@
 const express = require('express');
 const WebSocket = require('ws');
+const http = require('http');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
@@ -9,7 +10,8 @@ const fs = require('fs');
 const bcrypt = require('bcryptjs');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
 
 // Middleware
 app.use(cors());
@@ -23,9 +25,7 @@ if (!fs.existsSync(uploadsDir)) {
 }
 app.use('/uploads', express.static(uploadsDir));
 
-// WebSocket server
-const wss = new WebSocket.Server({ port: 8080 });
-
+// WebSocket connection
 wss.on('connection', (ws) => {
   console.log('New client connected');
 
@@ -203,6 +203,6 @@ app.post('/messages', (req, res) => {
 });
 
 // Start the server
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+server.listen(5000, () => {
+  console.log('Server is running on http://localhost:5000');
 });
