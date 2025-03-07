@@ -210,6 +210,64 @@ app.post('/messages', (req, res) => {
   );
 });
 
+// Edit a message
+app.put('/messages/:id', (req, res) => {
+  const { id } = req.params;
+  const { text } = req.body;
+
+  if (!text) {
+    return res.status(400).json({ error: 'Text is required to edit a message.' });
+  }
+
+  db.run(
+    'UPDATE messages SET text = ? WHERE id = ?',
+    [text, id],
+    function (err) {
+      if (err) {
+        console.error('Error updating message:', err);
+        return res.status(500).json({ error: 'An error occurred while updating the message.' });
+      }
+
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Message not found.' });
+      }
+
+      db.get('SELECT * FROM messages WHERE id = ?', [id], (err, message) => {
+        if (err || !message) {
+          console.error('Error fetching updated message:', err);
+          return res.status(500).json({ error: 'An error occurred while fetching the updated message.' });
+        }
+
+        broadcastMessage(message); // Broadcast the updated message to all clients
+        res.status(200).json(message);
+      });
+    }
+  );
+});
+
+// Delete a message
+app.delete('/messages/:id', (req, res) => {
+  const { id } = req.params;
+
+  db.run(
+    'DELETE FROM messages WHERE id = ?',
+    [id],
+    function (err) {
+      if (err) {
+        console.error('Error deleting message:', err);
+        return res.status(500).json({ error: 'An error occurred while deleting the message.' });
+      }
+
+      if (this.changes === 0) {
+        return res.status(404).json({ error: 'Message not found.' });
+      }
+
+      broadcastMessage({ id, action: 'delete' }); // Broadcast the deletion to all clients
+      res.status(200).json({ message: 'Message deleted successfully.' });
+    }
+  );
+});
+
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('Shutting down server...');
