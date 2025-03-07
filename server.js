@@ -1,11 +1,12 @@
 const express = require('express');
+const WebSocket = require('ws');
 const bodyParser = require('body-parser');
 const cors = require('cors');
-const bcrypt = require('bcryptjs');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fileUpload = require('express-fileupload');
 const fs = require('fs');
+const bcrypt = require('bcryptjs');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -13,19 +14,38 @@ const PORT = process.env.PORT || 5000;
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
-app.use(fileUpload()); // Enable file uploads
+app.use(fileUpload());
 
-// Ensure uploads directory exists
+// Serve uploaded files
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
-app.use('/uploads', express.static(uploadsDir)); // Serve uploaded files
+app.use('/uploads', express.static(uploadsDir));
 
-// Connect to SQLite database
+// WebSocket server
+const wss = new WebSocket.Server({ port: 8080 });
+
+wss.on('connection', (ws) => {
+  console.log('New client connected');
+
+  ws.on('close', () => {
+    console.log('Client disconnected');
+  });
+});
+
+// Broadcast new messages to all connected clients
+function broadcastMessage(message) {
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify(message));
+    }
+  });
+}
+
+// Database setup
 const db = new sqlite3.Database(path.join(__dirname, 'database.sqlite'));
 
-// Create users table if it doesn't exist
 db.serialize(() => {
   db.run(`
     CREATE TABLE IF NOT EXISTS users (
@@ -36,7 +56,6 @@ db.serialize(() => {
     )
   `);
 
-  // Create messages table if it doesn't exist
   db.run(`
     CREATE TABLE IF NOT EXISTS messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,11 +76,9 @@ app.post('/register', async (req, res) => {
     return res.status(400).json({ error: 'Username and password are required.' });
   }
 
-  // Convert username to lowercase for case-insensitive comparison
   const lowercaseUsername = username.toLowerCase();
 
   try {
-    // Check if the username already exists (case-insensitive)
     db.get(
       'SELECT * FROM users WHERE LOWER(username) = ?',
       [lowercaseUsername],
@@ -74,10 +91,8 @@ app.post('/register', async (req, res) => {
           return res.status(400).json({ error: 'Username already exists.' });
         }
 
-        // Hash the password
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Insert the new user into the database
         db.run(
           'INSERT INTO users (username, password, profilePicture) VALUES (?, ?, ?)',
           [lowercaseUsername, hashedPassword, profilePicture || 'https://via.placeholder.com/150'],
@@ -103,11 +118,9 @@ app.post('/login', async (req, res) => {
     return res.status(400).json({ error: 'Username and password are required.' });
   }
 
-  // Convert username to lowercase for case-insensitive comparison
   const lowercaseUsername = username.toLowerCase();
 
   try {
-    // Find the user in the database (case-insensitive)
     db.get(
       'SELECT * FROM users WHERE LOWER(username) = ?',
       [lowercaseUsername],
@@ -116,13 +129,11 @@ app.post('/login', async (req, res) => {
           return res.status(400).json({ error: 'Invalid username or password.' });
         }
 
-        // Compare the provided password with the hashed password
         const isPasswordValid = await bcrypt.compare(password, user.password);
         if (!isPasswordValid) {
           return res.status(400).json({ error: 'Invalid username or password.' });
         }
 
-        // Return user data (excluding the password)
         res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture });
       }
     );
@@ -131,7 +142,7 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// Upload media (images/videos)
+// Upload media
 app.post('/upload', (req, res) => {
   if (!req.files || !req.files.media) {
     return res.status(400).json({ error: 'No file uploaded.' });
@@ -178,14 +189,13 @@ app.post('/messages', (req, res) => {
         return res.status(500).json({ error: 'An error occurred while sending the message.' });
       }
 
-      // Fetch the newly inserted message
       db.get('SELECT * FROM messages WHERE id = ?', [this.lastID], (err, message) => {
         if (err || !message) {
           console.error('Error fetching message:', err);
           return res.status(500).json({ error: 'An error occurred while fetching the message.' });
         }
 
-        console.log('Message saved:', message); // Log the saved message
+        broadcastMessage(message); // Broadcast the message to all clients
         res.status(201).json(message);
       });
     }
