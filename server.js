@@ -44,8 +44,16 @@ function broadcastMessage(message) {
 }
 
 // Database setup
-const db = new sqlite3.Database(path.join(__dirname, 'database.sqlite'));
+const dbPath = path.join(__dirname, 'database.sqlite');
+const db = new sqlite3.Database(dbPath);
 
+// Check if the database file exists
+if (!fs.existsSync(dbPath)) {
+  console.log('Database file does not exist. Creating a new one...');
+  fs.writeFileSync(dbPath, ''); // Create an empty file
+}
+
+// Initialize tables if they don't exist
 db.serialize(() => {
   db.run(`
     CREATE TABLE IF NOT EXISTS users (
@@ -200,6 +208,22 @@ app.post('/messages', (req, res) => {
       });
     }
   );
+});
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+  console.log('Shutting down server...');
+  db.close((err) => {
+    if (err) {
+      console.error('Error closing database:', err);
+    } else {
+      console.log('Database connection closed.');
+    }
+    server.close(() => {
+      console.log('Server shut down.');
+      process.exit(0);
+    });
+  });
 });
 
 // Start the server
