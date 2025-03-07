@@ -89,12 +89,10 @@ function addMessageToChat(message) {
   lastMessageUsername = message.username; // Update last message username
 }
 
-// Remove a message from the chat UI
-function removeMessageFromChat(messageId) {
-  const messageElement = document.querySelector(`.message[data-message-id="${messageId}"]`);
-  if (messageElement) {
-    messageElement.remove();
-  }
+// Toggle hiding name and profile picture
+function toggleNameAndPfp() {
+  hideNameAndPfp = hideNameAndPfpCheckbox.checked;
+  fetchMessages(); // Refresh messages to apply changes
 }
 
 // Show context menu on right-click
@@ -133,17 +131,6 @@ async function editMessage() {
   }
 }
 
-// Update a message in the chat UI
-function updateMessageInChat(message) {
-  const messageElement = document.querySelector(`.message[data-message-id="${message.id}"]`);
-  if (messageElement) {
-    const textElement = messageElement.querySelector('.message-content p');
-    if (textElement) {
-      textElement.textContent = message.text;
-    }
-  }
-}
-
 // Delete a message
 async function deleteMessage() {
   if (confirm('Are you sure you want to delete this message?')) {
@@ -160,6 +147,25 @@ async function deleteMessage() {
     } catch (error) {
       console.error('Error deleting message:', error);
     }
+  }
+}
+
+// Helper function to update a message in the chat UI
+function updateMessageInChat(message) {
+  const messageElement = document.querySelector(`.message[data-message-id="${message.id}"]`);
+  if (messageElement) {
+    const textElement = messageElement.querySelector('.message-content p');
+    if (textElement) {
+      textElement.textContent = message.text;
+    }
+  }
+}
+
+// Helper function to remove a message from the chat UI
+function removeMessageFromChat(messageId) {
+  const messageElement = document.querySelector(`.message[data-message-id="${messageId}"]`);
+  if (messageElement) {
+    messageElement.remove();
   }
 }
 
