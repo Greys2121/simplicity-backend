@@ -74,6 +74,7 @@ db.serialize(() => {
       profilePicture TEXT,
       text TEXT,
       mediaUrl TEXT,
+      hideNameAndPfp BOOLEAN DEFAULT FALSE,
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
@@ -179,21 +180,28 @@ app.get('/messages', (req, res) => {
     if (err) {
       return res.status(500).json({ error: 'An error occurred while fetching messages.' });
     }
-    res.json(messages);
+    const processedMessages = messages.map(message => {
+      if (message.hideNameAndPfp) {
+        message.username = 'Anonymous';
+        message.profilePicture = ''; // Optionally, you can set a default anonymous profile picture
+      }
+      return message;
+    });
+    res.json(processedMessages);
   });
 });
 
 // Send a new message
 app.post('/messages', (req, res) => {
-  const { username, profilePicture, text, mediaUrl } = req.body;
+  const { username, profilePicture, text, mediaUrl, hideNameAndPfp } = req.body;
 
   if (!username || (!text && !mediaUrl)) {
     return res.status(400).json({ error: 'Username and text or media are required.' });
   }
 
   db.run(
-    'INSERT INTO messages (username, profilePicture, text, mediaUrl) VALUES (?, ?, ?, ?)',
-    [username, profilePicture, text, mediaUrl],
+    'INSERT INTO messages (username, profilePicture, text, mediaUrl, hideNameAndPfp) VALUES (?, ?, ?, ?, ?)',
+    [username, profilePicture, text, mediaUrl, hideNameAndPfp || false],
     function (err) {
       if (err) {
         console.error('Error inserting message:', err);
