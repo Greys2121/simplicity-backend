@@ -210,6 +210,83 @@ app.put('/users/:id/profilePicture', (req, res) => {
   );
 });
 
+// Upload media
+app.post('/upload', (req, res) => {
+  if (!req.files || !req.files.media) {
+    return res.status(400).json({ error: 'No file uploaded.' });
+  }
+
+  const mediaFile = req.files.media;
+  const fileName = `${Date.now()}_${mediaFile.name}`;
+  const filePath = path.join(uploadsDir, fileName);
+
+  mediaFile.mv(filePath, (err) => {
+    if (err) {
+      console.error('File upload error:', err);
+      return res.status(500).json({ error: 'Failed to upload file.' });
+    }
+
+    res.json({ mediaUrl: `/uploads/${fileName}` });
+  });
+});
+
+// Get all messages
+app.get('/messages', (req, res) => {
+  db.all('SELECT * FROM messages ORDER BY timestamp DESC', (err, messages) => {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ error: 'Failed to fetch messages.' });
+    }
+
+    res.json(messages);
+  });
+});
+
+// Post a new message
+app.post('/messages', (req, res) => {
+  const { username, profilePicture, text, mediaUrl, hideNameAndPfp } = req.body;
+
+  if (!username || (!text && !mediaUrl)) {
+    return res.status(400).json({ error: 'Invalid message data.' });
+  }
+
+  db.run(
+    'INSERT INTO messages (username, profilePicture, text, mediaUrl, hideNameAndPfp) VALUES (?, ?, ?, ?, ?)',
+    [username, profilePicture, text, mediaUrl, hideNameAndPfp],
+    function (err) {
+      if (err) {
+        console.error('Database error:', err);
+        return res.status(500).json({ error: 'Failed to post message.' });
+      }
+
+      const newMessage = {
+        id: this.lastID,
+        username,
+        profilePicture,
+        text,
+        mediaUrl,
+        hideNameAndPfp,
+        timestamp: new Date().toISOString(),
+      };
+
+      broadcastMessage(newMessage);
+      res.status(201).json(newMessage);
+    }
+  );
+});
+
+// Delete a message after 10 hours
+setInterval(() => {
+  db.run(
+    'DELETE FROM messages WHERE timestamp < datetime("now", "-10 hours")',
+    (err) => {
+      if (err) {
+        console.error('Error deleting old messages:', err);
+      }
+    }
+  );
+}, 3600000); // Run every hour
+
 // Start the server
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
