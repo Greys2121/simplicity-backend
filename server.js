@@ -80,107 +80,135 @@ db.serialize(() => {
   `);
 });
 
-// Send a new message
-app.post('/messages', (req, res) => {
-  const { username, profilePicture, text, mediaUrl, hideNameAndPfp } = req.body;
+// Register a new user
+app.post('/register', async (req, res) => {
+  const { username, password, profilePicture } = req.body;
 
-  if (!username || (!text && !mediaUrl)) {
-    return res.status(400).json({ error: 'Username and text or media are required.' });
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required.' });
+  }
+
+  const lowercaseUsername = username.toLowerCase();
+
+  try {
+    // Check if the username already exists (case-insensitive)
+    db.get(
+      'SELECT * FROM users WHERE LOWER(username) = ?',
+      [lowercaseUsername],
+      async (err, user) => {
+        if (err) {
+          console.error('Database error:', err);
+          return res.status(500).json({ error: 'An error occurred during registration.' });
+        }
+
+        if (user) {
+          return res.status(400).json({ error: 'Username already exists.' });
+        }
+
+        // Hash the password
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Insert the new user into the database
+        db.run(
+          'INSERT INTO users (username, password, profilePicture) VALUES (?, ?, ?)',
+          [lowercaseUsername, hashedPassword, profilePicture || 'https://via.placeholder.com/150'],
+          function (err) {
+            if (err) {
+              console.error('Database error:', err);
+              return res.status(500).json({ error: 'An error occurred during registration.' });
+            }
+
+            // Return the newly created user
+            res.status(201).json({
+              id: this.lastID,
+              username: lowercaseUsername,
+              profilePicture: profilePicture || 'https://via.placeholder.com/150',
+            });
+          }
+        );
+      }
+    );
+  } catch (err) {
+    console.error('Unexpected error:', err);
+    res.status(500).json({ error: 'An error occurred during registration.' });
+  }
+});
+
+// Login an existing user
+app.post('/login', async (req, res) => {
+  const { username, password } = req.body;
+
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required.' });
+  }
+
+  const lowercaseUsername = username.toLowerCase();
+
+  try {
+    // Find the user by username (case-insensitive)
+    db.get(
+      'SELECT * FROM users WHERE LOWER(username) = ?',
+      [lowercaseUsername],
+      async (err, user) => {
+        if (err || !user) {
+          return res.status(400).json({ error: 'Invalid username or password.' });
+        }
+
+        // Compare the provided password with the hashed password in the database
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+        if (!isPasswordValid) {
+          return res.status(400).json({ error: 'Invalid username or password.' });
+        }
+
+        // Return the user data
+        res.json({
+          id: user.id,
+          username: user.username,
+          profilePicture: user.profilePicture,
+        });
+      }
+    );
+  } catch (err) {
+    console.error('Unexpected error:', err);
+    res.status(500).json({ error: 'An error occurred during login.' });
+  }
+});
+
+// Update profile picture
+app.put('/users/:id/profilePicture', (req, res) => {
+  const { id } = req.params;
+  const { profilePicture } = req.body;
+
+  if (!profilePicture) {
+    return res.status(400).json({ error: 'Profile picture URL is required.' });
   }
 
   db.run(
-    'INSERT INTO messages (username, profilePicture, text, mediaUrl, hideNameAndPfp) VALUES (?, ?, ?, ?, ?)',
-    [username, profilePicture, text, mediaUrl, hideNameAndPfp || false],
+    'UPDATE users SET profilePicture = ? WHERE id = ?',
+    [profilePicture, id],
     function (err) {
       if (err) {
-        console.error('Error inserting message:', err);
-        return res.status(500).json({ error: 'An error occurred while sending the message.' });
-      }
-
-      db.get('SELECT * FROM messages WHERE id = ?', [this.lastID], (err, message) => {
-        if (err || !message) {
-          console.error('Error fetching message:', err);
-          return res.status(500).json({ error: 'An error occurred while fetching the message.' });
-        }
-
-        broadcastMessage(message); // Broadcast the message to all clients
-        res.status(201).json(message);
-      });
-    }
-  );
-});
-
-// Fetch all messages
-app.get('/messages', (req, res) => {
-  db.all('SELECT * FROM messages ORDER BY timestamp ASC', (err, messages) => {
-    if (err) {
-      return res.status(500).json({ error: 'An error occurred while fetching messages.' });
-    }
-    const processedMessages = messages.map(message => {
-      if (message.hideNameAndPfp) {
-        message.username = 'Anonymous';
-        message.profilePicture = ''; // Optionally, you can set a default anonymous profile picture
-      }
-      return message;
-    });
-    res.json(processedMessages);
-  });
-});
-
-// Edit a message
-app.put('/messages/:id', (req, res) => {
-  const { id } = req.params;
-  const { text } = req.body;
-
-  if (!text) {
-    return res.status(400).json({ error: 'Text is required to edit a message.' });
-  }
-
-  db.run(
-    'UPDATE messages SET text = ? WHERE id = ?',
-    [text, id],
-    function (err) {
-      if (err) {
-        console.error('Error updating message:', err);
-        return res.status(500).json({ error: 'An error occurred while updating the message.' });
+        console.error('Database error:', err);
+        return res.status(500).json({ error: 'An error occurred while updating the profile picture.' });
       }
 
       if (this.changes === 0) {
-        return res.status(404).json({ error: 'Message not found.' });
+        return res.status(404).json({ error: 'User not found.' });
       }
 
-      db.get('SELECT * FROM messages WHERE id = ?', [id], (err, message) => {
-        if (err || !message) {
-          console.error('Error fetching updated message:', err);
-          return res.status(500).json({ error: 'An error occurred while fetching the updated message.' });
+      // Update profile picture in all messages sent by this user
+      db.run(
+        'UPDATE messages SET profilePicture = ? WHERE username = (SELECT username FROM users WHERE id = ?)',
+        [profilePicture, id],
+        function (err) {
+          if (err) {
+            console.error('Database error:', err);
+            return res.status(500).json({ error: 'An error occurred while updating the profile picture in messages.' });
+          }
+
+          res.status(200).json({ message: 'Profile picture updated successfully.' });
         }
-
-        broadcastMessage(message); // Broadcast the updated message to all clients
-        res.status(200).json(message);
-      });
-    }
-  );
-});
-
-// Delete a message
-app.delete('/messages/:id', (req, res) => {
-  const { id } = req.params;
-
-  db.run(
-    'DELETE FROM messages WHERE id = ?',
-    [id],
-    function (err) {
-      if (err) {
-        console.error('Error deleting message:', err);
-        return res.status(500).json({ error: 'An error occurred while deleting the message.' });
-      }
-
-      if (this.changes === 0) {
-        return res.status(404).json({ error: 'Message not found.' });
-      }
-
-      broadcastMessage({ id, action: 'delete' }); // Broadcast the deletion to all clients
-      res.status(200).json({ message: 'Message deleted successfully.' });
+      );
     }
   );
 });
