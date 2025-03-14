@@ -1,7 +1,16 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
-const db = new sqlite3.Database(path.join(__dirname, 'database.sqlite'));
+// Use a writable directory for the database file
+const dbPath = process.env.DB_PATH || path.join('/tmp', 'database.sqlite');
+
+const db = new sqlite3.Database(dbPath, (err) => {
+  if (err) {
+    console.error('Error opening database:', err.message);
+  } else {
+    console.log('Connected to the database at:', dbPath);
+  }
+});
 
 db.serialize(() => {
   db.run(`
