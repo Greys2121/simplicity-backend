@@ -47,14 +47,11 @@ function broadcastMessage(message) {
 }
 
 // Database setup
-const dbPath = path.join(__dirname, 'database.sqlite');
+const dbPath = process.env.DB_PATH || path.join(__dirname, 'database.sqlite');
 const db = new sqlite3.Database(dbPath);
 
-// Check if the database file exists
-if (!fs.existsSync(dbPath)) {
-  console.log('Database file does not exist. Creating a new one...');
-  fs.writeFileSync(dbPath, ''); // Create an empty file
-}
+// Log the database path for debugging
+console.log('Database path:', dbPath);
 
 // Initialize tables if they don't exist
 db.serialize(() => {
@@ -214,6 +211,7 @@ app.put('/users/:id/profilePicture', (req, res) => {
 });
 
 // Start the server
-server.listen(5000, () => {
-  console.log('Server is running on http://localhost:5000');
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
 });
