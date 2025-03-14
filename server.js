@@ -47,38 +47,34 @@ function broadcastMessage(message) {
 }
 
 // Database setup
-const dbPath = process.env.DB_PATH || path.join(__dirname, 'data', 'database.sqlite');
+const dbPath = process.env.DB_PATH || path.join(__dirname, 'database.sqlite');
 const db = new sqlite3.Database(dbPath);
 
 // Log the database path for debugging
 console.log('Database path:', dbPath);
 
 // Initialize tables if they don't exist
-const dbExists = fs.existsSync(dbPath);
-
 db.serialize(() => {
-  if (!dbExists) {
-    db.run(`
-      CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        profilePicture TEXT
-      )
-    `);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      profilePicture TEXT
+    )
+  `);
 
-    db.run(`
-      CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT NOT NULL,
-        profilePicture TEXT,
-        text TEXT,
-        mediaUrl TEXT,
-        hideNameAndPfp BOOLEAN DEFAULT FALSE,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-  }
+  db.run(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL,
+      profilePicture TEXT,
+      text TEXT,
+      mediaUrl TEXT,
+      hideNameAndPfp BOOLEAN DEFAULT FALSE,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
 });
 
 // Register a new user
@@ -118,12 +114,6 @@ app.post('/register', async (req, res) => {
               console.error('Database error:', err);
               return res.status(500).json({ error: 'An error occurred during registration.' });
             }
-
-            console.log('New user created:', {
-              id: this.lastID,
-              username: lowercaseUsername,
-              profilePicture: profilePicture || 'https://via.placeholder.com/150',
-            });
 
             // Return the newly created user
             res.status(201).json({
