@@ -91,11 +91,13 @@ app.post('/register', async (req, res) => {
   const lowercaseUsername = username.toLowerCase();
 
   try {
+    // Check if the username already exists (case-insensitive)
     db.get(
       'SELECT * FROM users WHERE LOWER(username) = ?',
       [lowercaseUsername],
       async (err, user) => {
         if (err) {
+          console.error('Database error:', err);
           return res.status(500).json({ error: 'An error occurred during registration.' });
         }
 
@@ -103,21 +105,31 @@ app.post('/register', async (req, res) => {
           return res.status(400).json({ error: 'Username already exists.' });
         }
 
+        // Hash the password
         const hashedPassword = await bcrypt.hash(password, 10);
 
+        // Insert the new user into the database
         db.run(
           'INSERT INTO users (username, password, profilePicture) VALUES (?, ?, ?)',
           [lowercaseUsername, hashedPassword, profilePicture || 'https://via.placeholder.com/150'],
           function (err) {
             if (err) {
+              console.error('Database error:', err);
               return res.status(500).json({ error: 'An error occurred during registration.' });
             }
-            res.status(201).json({ id: this.lastID, username: lowercaseUsername, profilePicture });
+
+            // Return the newly created user
+            res.status(201).json({
+              id: this.lastID,
+              username: lowercaseUsername,
+              profilePicture: profilePicture || 'https://via.placeholder.com/150',
+            });
           }
         );
       }
     );
   } catch (err) {
+    console.error('Unexpected error:', err);
     res.status(500).json({ error: 'An error occurred during registration.' });
   }
 });
@@ -133,6 +145,7 @@ app.post('/login', async (req, res) => {
   const lowercaseUsername = username.toLowerCase();
 
   try {
+    // Find the user by username (case-insensitive)
     db.get(
       'SELECT * FROM users WHERE LOWER(username) = ?',
       [lowercaseUsername],
@@ -141,15 +154,22 @@ app.post('/login', async (req, res) => {
           return res.status(400).json({ error: 'Invalid username or password.' });
         }
 
+        // Compare the provided password with the hashed password in the database
         const isPasswordValid = await bcrypt.compare(password, user.password);
         if (!isPasswordValid) {
           return res.status(400).json({ error: 'Invalid username or password.' });
         }
 
-        res.json({ id: user.id, username: user.username, profilePicture: user.profilePicture });
+        // Return the user data
+        res.json({
+          id: user.id,
+          username: user.username,
+          profilePicture: user.profilePicture,
+        });
       }
     );
   } catch (err) {
+    console.error('Unexpected error:', err);
     res.status(500).json({ error: 'An error occurred during login.' });
   }
 });
@@ -168,7 +188,7 @@ app.put('/users/:id/profilePicture', (req, res) => {
     [profilePicture, id],
     function (err) {
       if (err) {
-        console.error('Error updating profile picture:', err);
+        console.error('Database error:', err);
         return res.status(500).json({ error: 'An error occurred while updating the profile picture.' });
       }
 
@@ -182,7 +202,7 @@ app.put('/users/:id/profilePicture', (req, res) => {
         [profilePicture, id],
         function (err) {
           if (err) {
-            console.error('Error updating profile picture in messages:', err);
+            console.error('Database error:', err);
             return res.status(500).json({ error: 'An error occurred while updating the profile picture in messages.' });
           }
 
@@ -191,147 +211,6 @@ app.put('/users/:id/profilePicture', (req, res) => {
       );
     }
   );
-});
-
-// Upload media
-app.post('/upload', (req, res) => {
-  if (!req.files || !req.files.media) {
-    return res.status(400).json({ error: 'No file uploaded.' });
-  }
-
-  const media = req.files.media;
-  const fileName = `${Date.now()}_${media.name}`;
-  const filePath = path.join(__dirname, 'uploads', fileName);
-
-  media.mv(filePath, (err) => {
-    if (err) {
-      console.error('Error moving file:', err);
-      return res.status(500).json({ error: 'Failed to upload file.' });
-    }
-
-    res.json({ mediaUrl: `/uploads/${fileName}` });
-  });
-});
-
-// Fetch all messages
-app.get('/messages', (req, res) => {
-  db.all('SELECT * FROM messages ORDER BY timestamp ASC', (err, messages) => {
-    if (err) {
-      return res.status(500).json({ error: 'An error occurred while fetching messages.' });
-    }
-    const processedMessages = messages.map(message => {
-      if (message.hideNameAndPfp) {
-        message.username = 'Anonymous';
-        message.profilePicture = ''; // Optionally, you can set a default anonymous profile picture
-      }
-      return message;
-    });
-    res.json(processedMessages);
-  });
-});
-
-// Send a new message
-app.post('/messages', (req, res) => {
-  const { username, profilePicture, text, mediaUrl, hideNameAndPfp } = req.body;
-
-  if (!username || (!text && !mediaUrl)) {
-    return res.status(400).json({ error: 'Username and text or media are required.' });
-  }
-
-  db.run(
-    'INSERT INTO messages (username, profilePicture, text, mediaUrl, hideNameAndPfp) VALUES (?, ?, ?, ?, ?)',
-    [username, profilePicture, text, mediaUrl, hideNameAndPfp || false],
-    function (err) {
-      if (err) {
-        console.error('Error inserting message:', err);
-        return res.status(500).json({ error: 'An error occurred while sending the message.' });
-      }
-
-      db.get('SELECT * FROM messages WHERE id = ?', [this.lastID], (err, message) => {
-        if (err || !message) {
-          console.error('Error fetching message:', err);
-          return res.status(500).json({ error: 'An error occurred while fetching the message.' });
-        }
-
-        broadcastMessage(message); // Broadcast the message to all clients
-        res.status(201).json(message);
-      });
-    }
-  );
-});
-
-// Edit a message
-app.put('/messages/:id', (req, res) => {
-  const { id } = req.params;
-  const { text } = req.body;
-
-  if (!text) {
-    return res.status(400).json({ error: 'Text is required to edit a message.' });
-  }
-
-  db.run(
-    'UPDATE messages SET text = ? WHERE id = ?',
-    [text, id],
-    function (err) {
-      if (err) {
-        console.error('Error updating message:', err);
-        return res.status(500).json({ error: 'An error occurred while updating the message.' });
-      }
-
-      if (this.changes === 0) {
-        return res.status(404).json({ error: 'Message not found.' });
-      }
-
-      db.get('SELECT * FROM messages WHERE id = ?', [id], (err, message) => {
-        if (err || !message) {
-          console.error('Error fetching updated message:', err);
-          return res.status(500).json({ error: 'An error occurred while fetching the updated message.' });
-        }
-
-        broadcastMessage(message); // Broadcast the updated message to all clients
-        res.status(200).json(message);
-      });
-    }
-  );
-});
-
-// Delete a message
-app.delete('/messages/:id', (req, res) => {
-  const { id } = req.params;
-
-  db.run(
-    'DELETE FROM messages WHERE id = ?',
-    [id],
-    function (err) {
-      if (err) {
-        console.error('Error deleting message:', err);
-        return res.status(500).json({ error: 'An error occurred while deleting the message.' });
-      }
-
-      if (this.changes === 0) {
-        return res.status(404).json({ error: 'Message not found.' });
-      }
-
-      broadcastMessage({ id, action: 'delete' }); // Broadcast the deletion to all clients
-      res.status(200).json({ message: 'Message deleted successfully.' });
-    }
-  );
-});
-
-// Graceful shutdown
-process.on('SIGINT', () => {
-  console.log('Shutting down server...');
-  db.close((err) => {
-    if (err) {
-      console.error('Error closing database:', err);
-    } else {
-      console.log('Database connection closed.');
-    }
-    server.close(() => {
-      console.log('Server shut down.');
-      process.exit(0);
-    });
-  });
 });
 
 // Start the server
