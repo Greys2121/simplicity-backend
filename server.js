@@ -285,7 +285,7 @@ setInterval(() => {
       }
     }
   );
-}, 3600000); // Run every hour
+}, 36000000); // Run every hour
 
 // Start the server
 const PORT = process.env.PORT || 5000;
