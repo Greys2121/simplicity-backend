@@ -50,20 +50,21 @@ function broadcastMessage(message) {
 const dbPath = process.env.DB_PATH || path.join(__dirname, 'database.sqlite');
 const db = new sqlite3.Database(dbPath);
 
+// Log the database path for debugging
 console.log('Database path:', dbPath);
 
 // Initialize tables if they don't exist
 db.serialize(() => {
-  db.run(`
+  db.run(
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
       profilePicture TEXT
     )
-  `);
+  );
 
-  db.run(`
+  db.run(
     CREATE TABLE IF NOT EXISTS messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT NOT NULL,
@@ -73,7 +74,7 @@ db.serialize(() => {
       hideNameAndPfp BOOLEAN DEFAULT FALSE,
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )
-  `);
+  );
 });
 
 // Register a new user
@@ -87,6 +88,7 @@ app.post('/register', async (req, res) => {
   const lowercaseUsername = username.toLowerCase();
 
   try {
+    // Check if the username already exists (case-insensitive)
     db.get(
       'SELECT * FROM users WHERE LOWER(username) = ?',
       [lowercaseUsername],
@@ -100,8 +102,10 @@ app.post('/register', async (req, res) => {
           return res.status(400).json({ error: 'Username already exists.' });
         }
 
+        // Hash the password
         const hashedPassword = await bcrypt.hash(password, 10);
 
+        // Insert the new user into the database
         db.run(
           'INSERT INTO users (username, password, profilePicture) VALUES (?, ?, ?)',
           [lowercaseUsername, hashedPassword, profilePicture || 'https://via.placeholder.com/150'],
@@ -111,6 +115,7 @@ app.post('/register', async (req, res) => {
               return res.status(500).json({ error: 'An error occurred during registration.' });
             }
 
+            // Return the newly created user
             res.status(201).json({
               id: this.lastID,
               username: lowercaseUsername,
@@ -137,6 +142,7 @@ app.post('/login', async (req, res) => {
   const lowercaseUsername = username.toLowerCase();
 
   try {
+    // Find the user by username (case-insensitive)
     db.get(
       'SELECT * FROM users WHERE LOWER(username) = ?',
       [lowercaseUsername],
@@ -145,11 +151,13 @@ app.post('/login', async (req, res) => {
           return res.status(400).json({ error: 'Invalid username or password.' });
         }
 
+        // Compare the provided password with the hashed password in the database
         const isPasswordValid = await bcrypt.compare(password, user.password);
         if (!isPasswordValid) {
           return res.status(400).json({ error: 'Invalid username or password.' });
         }
 
+        // Return the user data
         res.json({
           id: user.id,
           username: user.username,
@@ -185,13 +193,14 @@ app.put('/users/:id/profilePicture', (req, res) => {
         return res.status(404).json({ error: 'User not found.' });
       }
 
+      // Update profile picture in all messages sent by this user
       db.run(
         'UPDATE messages SET profilePicture = ? WHERE username = (SELECT username FROM users WHERE id = ?)',
         [profilePicture, id],
         function (err) {
           if (err) {
             console.error('Database error:', err);
-            return res.status(500).json({ error: 'An error occurred while updating messages.' });
+            return res.status(500).json({ error: 'An error occurred while updating the profile picture in messages.' });
           }
 
           res.status(200).json({ message: 'Profile picture updated successfully.' });
@@ -208,7 +217,7 @@ app.post('/upload', (req, res) => {
   }
 
   const mediaFile = req.files.media;
-  const fileName = `${Date.now()}_${mediaFile.name}`;
+  const fileName = ${Date.now()}_${mediaFile.name};
   const filePath = path.join(uploadsDir, fileName);
 
   mediaFile.mv(filePath, (err) => {
@@ -217,13 +226,13 @@ app.post('/upload', (req, res) => {
       return res.status(500).json({ error: 'Failed to upload file.' });
     }
 
-    res.json({ mediaUrl: `/uploads/${fileName}` });
+    res.json({ mediaUrl: /uploads/${fileName} });
   });
 });
 
-// Get all messages (updated to show oldest first)
+// Get all messages
 app.get('/messages', (req, res) => {
-  db.all('SELECT * FROM messages ORDER BY timestamp ASC', (err, messages) => { // CHANGED DESC TO ASC
+  db.all('SELECT * FROM messages ORDER BY timestamp DESC', (err, messages) => {
     if (err) {
       console.error('Database error:', err);
       return res.status(500).json({ error: 'Failed to fetch messages.' });
@@ -266,7 +275,20 @@ app.post('/messages', (req, res) => {
   );
 });
 
+// Delete a message after 10 hours
+setInterval(() => {
+  db.run(
+    'DELETE FROM messages WHERE timestamp < datetime("now", "-10 hours")',
+    (err) => {
+      if (err) {
+        console.error('Error deleting old messages:', err);
+      }
+    }
+  );
+}, 36000000); // Run every hour
+
+// Start the server
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+  console.log(Server is running on http://localhost:${PORT});
 });
